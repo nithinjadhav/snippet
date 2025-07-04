@@ -3,83 +3,82 @@ using Moq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Http;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using AccountsApi.Middleware;
 using AccountsApi.Services;
 using AccountsApi.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
-namespace AccountsApi.Tests.Middleware
+public class AccountSecurityAttributeTests
 {
-    public class AccountSecurityAttributeTests
+    private AccountSecurityAttribute CreateAttributeWithService(IAccountService service)
     {
-        private AccountSecurityAttribute CreateAttribute(IAccountService accountService = null)
-        {
-            var attr = new AccountSecurityAttribute();
-            return attr;
-        }
+        var attr = new AccountSecurityAttribute();
+        return attr;
+    }
 
-        private ActionExecutingContext CreateContext(string path, string customerIdHeader = null)
-        {
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Path = path;
-            if (customerIdHeader != null)
-                httpContext.Request.Headers["X-Customer-Id"] = customerIdHeader;
-            var actionContext = new ActionContext(httpContext, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
-            return new ActionExecutingContext(actionContext, new List<IFilterMetadata>(), new Dictionary<string, object>(), null);
-        }
+    private ActionExecutingContext CreateContext(string path, string customerIdHeader)
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = path;
+        if (customerIdHeader != null)
+            httpContext.Request.Headers["X-Customer-Id"] = customerIdHeader;
+        var actionContext = new ActionContext(httpContext, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        return new ActionExecutingContext(actionContext, new List<IFilterMetadata>(), new Dictionary<string, object>(), null);
+    }
 
-        [Fact]
-        public async Task OnActionExecutionAsync_MissingAccountIdOrCustomerId_ReturnsForbidden()
-        {
-            var attr = CreateAttribute();
-            var context = CreateContext("/api/accounts/", null);
-            var executed = false;
-            await attr.OnActionExecutionAsync(context, () => { executed = true; return Task.FromResult<ActionExecutedContext>(null); });
-            Assert.False(executed);
-            var result = Assert.IsType<ObjectResult>(context.Result);
-            Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
-        }
+    [Fact]
+    public async Task Returns_Forbidden_If_AccountId_Missing()
+    {
+        var mockService = new Mock<IAccountService>();
+        var attr = CreateAttributeWithService(mockService.Object);
+        var context = CreateContext("/api/accounts/", "100");
+        var executed = false;
+        await attr.OnActionExecutionAsync(context, () => { executed = true; return Task.FromResult<ActionExecutedContext>(null); });
+        Assert.IsType<ObjectResult>(context.Result);
+        var result = context.Result as ObjectResult;
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
 
-        [Fact]
-        public async Task OnActionExecutionAsync_InvalidAccountAccess_ReturnsForbidden()
-        {
-            var mockService = new Mock<IAccountService>();
-            mockService.Setup(s => s.GetListOfAccounts(1)).Returns(new List<Account>());
-            var attr = CreateAttribute();
-            var context = CreateContext("/api/accounts/123", "1");
-            context.HttpContext.RequestServices = new ServiceProviderStub(mockService.Object);
-            var executed = false;
-            await attr.OnActionExecutionAsync(context, () => { executed = true; return Task.FromResult<ActionExecutedContext>(null); });
-            Assert.False(executed);
-            var result = Assert.IsType<ObjectResult>(context.Result);
-            Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
-        }
+    [Fact]
+    public async Task Returns_Forbidden_If_CustomerId_Missing()
+    {
+        var mockService = new Mock<IAccountService>();
+        var attr = CreateAttributeWithService(mockService.Object);
+        var context = CreateContext("/api/accounts/1", null);
+        var executed = false;
+        await attr.OnActionExecutionAsync(context, () => { executed = true; return Task.FromResult<ActionExecutedContext>(null); });
+        Assert.IsType<ObjectResult>(context.Result);
+        var result = context.Result as ObjectResult;
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
 
-        [Fact]
-        public async Task OnActionExecutionAsync_ValidAccountAccess_CallsNext()
-        {
-            var mockService = new Mock<IAccountService>();
-            mockService.Setup(s => s.GetListOfAccounts(1)).Returns(new List<Account> { new Account { AccountId = 123 } });
-            var attr = CreateAttribute();
-            var context = CreateContext("/api/accounts/123", "1");
-            context.HttpContext.RequestServices = new ServiceProviderStub(mockService.Object);
-            var executed = false;
-            await attr.OnActionExecutionAsync(context, () => { executed = true; return Task.FromResult<ActionExecutedContext>(null); });
-            Assert.True(executed);
-            Assert.Null(context.Result);
-        }
+    [Fact]
+    public async Task Returns_Forbidden_If_Not_Authorized()
+    {
+        var mockService = new Mock<IAccountService>();
+        mockService.Setup(s => s.GetListOfAccounts(100)).Returns(new List<Account> { new Account { AccountId = 2, CustomerId = 100 } });
+        var attr = CreateAttributeWithService(mockService.Object);
+        var context = CreateContext("/api/accounts/1", "100");
+        context.HttpContext.RequestServices = new ServiceCollection().AddSingleton(mockService.Object).BuildServiceProvider();
+        var executed = false;
+        await attr.OnActionExecutionAsync(context, () => { executed = true; return Task.FromResult<ActionExecutedContext>(null); });
+        Assert.IsType<ObjectResult>(context.Result);
+        var result = context.Result as ObjectResult;
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+    }
 
-        // Helper for DI
-        private class ServiceProviderStub : IServiceProvider
-        {
-            private readonly IAccountService _service;
-            public ServiceProviderStub(IAccountService service) { _service = service; }
-            public object GetService(System.Type serviceType)
-            {
-                if (serviceType == typeof(IAccountService)) return _service;
-                return null;
-            }
-        }
+    [Fact]
+    public async Task Calls_Next_If_Authorized()
+    {
+        var mockService = new Mock<IAccountService>();
+        mockService.Setup(s => s.GetListOfAccounts(100)).Returns(new List<Account> { new Account { AccountId = 1, CustomerId = 100 } });
+        var attr = CreateAttributeWithService(mockService.Object);
+        var context = CreateContext("/api/accounts/1", "100");
+        context.HttpContext.RequestServices = new ServiceCollection().AddSingleton(mockService.Object).BuildServiceProvider();
+        var called = false;
+        await attr.OnActionExecutionAsync(context, () => { called = true; return Task.FromResult<ActionExecutedContext>(null); });
+        Assert.True(called);
+        Assert.Null(context.Result);
     }
 }
