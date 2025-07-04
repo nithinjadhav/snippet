@@ -23,6 +23,8 @@ public class AccountSecurityAttributeTests
         httpContext.Request.Path = path;
         if (customerIdHeader != null)
             httpContext.Request.Headers["X-Customer-Id"] = customerIdHeader;
+        // Ensure RequestServices is always set to a valid provider
+        httpContext.RequestServices = new ServiceCollection().BuildServiceProvider();
         var actionContext = new ActionContext(httpContext, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
         return new ActionExecutingContext(actionContext, new List<IFilterMetadata>(), new Dictionary<string, object>(), null);
     }
