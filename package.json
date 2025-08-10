@@ -1,0 +1,31 @@
+{
+  "name": "angular-docs-crawler",
+  "version": "1.0.0",
+  "description": "A crawler to download Angular documentation from angular.dev and generate VS Code Copilot instructions",
+  "main": "src/index.js",
+  "bin": {
+    "angular-docs-crawler": "./cli.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "crawl": "node src/crawler.js",
+    "cli": "node cli.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "angular",
+    "documentation",
+    "crawler",
+    "vscode",
+    "copilot"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.11.0",
+    "cheerio": "^1.1.2",
+    "fs-extra": "^11.3.1",
+    "path": "^0.12.7",
+    "url-parse": "^1.5.10"
+  }
+}
